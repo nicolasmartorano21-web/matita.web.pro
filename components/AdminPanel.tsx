@@ -20,9 +20,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
   const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Estado local para respuesta reactiva inmediata
   const [localInventory, setLocalInventory] = useState<Product[]>(products);
-  
   const [sales, setSales] = useState<Sale[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
@@ -32,7 +30,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
   const [newCouponDiscount, setNewCouponDiscount] = useState<string | number>('');
   const [editingPoints, setEditingPoints] = useState<{[key: string]: number}>({});
 
-  // Sincronizar localInventory cuando cambian las props
   useEffect(() => {
     setLocalInventory(products);
   }, [products]);
@@ -84,7 +81,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
       const data = await response.json();
       
       if (data.secure_url) {
-        // Guardamos el link con f_auto,q_auto ya aplicados para máxima optimización
         const optimizedUrl = data.secure_url.replace('/upload/', '/upload/f_auto,q_auto/');
         setEditingProduct(prev => ({ 
           ...prev, 
@@ -93,14 +89,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
         }));
       }
     } catch (err) {
-      alert("Error en la subida. Probá de nuevo.");
+      alert("Error en la subida.");
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleSaveProduct = async () => {
-    if (!editingProduct?.name || editingProduct.price === undefined) return alert('Faltan datos obligatorios.');
+    if (!editingProduct?.name || editingProduct.price === undefined || !editingProduct.category) return alert('Faltan datos (Nombre, Precio o Categoría).');
     setIsLoading(true);
     try {
       const productData: Product = {
@@ -110,26 +106,39 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
         curatorNote: editingProduct.curatorNote || '',
         price: Number(editingProduct.price),
         oldPrice: editingProduct.oldPrice ? Number(editingProduct.oldPrice) : undefined,
-        category: editingProduct.category || Category.ESCOLAR,
+        category: editingProduct.category as Category,
         imageUrl: editingProduct.imageUrl || '',
         gallery: editingProduct.gallery || [],
         stock: Number(editingProduct.stock || 0),
-        isNew: editingProduct.isNew ?? true,
+        isNew: editingProduct.isNew ?? false, // Ahora por defecto es FALSE para no saturar Novedades
         isVideo: editingProduct.isVideo || false,
         reviews: editingProduct.reviews || []
       };
       
       if (editingProduct.id) { 
         await database.updateProduct(productData); 
-        onUpdateProduct(productData); 
+        onUpdateProduct(productData);
+        setLocalInventory(prev => prev.map(p => p.id === productData.id ? productData : p));
       } else { 
         await database.addProduct(productData); 
-        onAddProduct(productData); 
+        onAddProduct(productData);
+        setLocalInventory(prev => [productData, ...prev]);
       }
       setEditingProduct(null);
-      refreshData();
-    } catch (e: any) { alert(`Error al guardar: ${e.message}`); }
+    } catch (e: any) { alert(`Error: ${e.message}`); }
     finally { setIsLoading(false); }
+  };
+
+  const handleDelete = async (id: string) => {
+    if(!confirm('¿Borrar esta pieza?')) return;
+    setLocalInventory(prev => prev.filter(p => p.id !== id));
+    try {
+      await database.deleteProduct(id);
+      onDeleteProduct(id);
+    } catch (e) {
+      alert("Error al borrar en base de datos");
+      refreshData();
+    }
   };
 
   const optimizeUrl = (url: string) => {
@@ -145,12 +154,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
   };
 
   if (!isAuthenticated) return (
-    <div className="fixed inset-0 z-[300] bg-[#0a3d31] flex items-center justify-center p-6 text-center">
+    <div className="fixed inset-0 z-[300] bg-[#0a3d31] flex items-center justify-center p-6 text-center animate-fade-in">
       <div className="bg-[#f9f7f2] p-10 rounded-[40px] shadow-2xl w-full max-w-sm border-t-[10px] border-[#c5a35d]">
         <img src={LOGO_URL} className="w-16 h-16 mx-auto mb-8 object-contain" alt="Logo" />
         <h2 className="serif text-2xl mb-10 text-[#0a3d31] font-bold uppercase italic tracking-tighter leading-none">Staff Matita</h2>
         <form onSubmit={handleLogin} className="space-y-6">
-          <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="PIN ACCESO" className="w-full px-8 py-5 rounded-full border border-black/5 outline-none text-center font-bold tracking-[0.3em] bg-white" autoFocus />
+          <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="PIN ACCESO" className="w-full px-8 py-5 rounded-full border border-black/5 outline-none text-center font-bold tracking-[0.3em] bg-white shadow-inner" autoFocus />
           <button className="w-full bg-[#0a3d31] text-white py-5 rounded-full font-bold uppercase tracking-widest text-[10px] hover:bg-[#c5a35d] shadow-xl transition-all">Ingresar</button>
         </form>
         <button onClick={onClose} className="mt-10 text-[9px] opacity-30 uppercase font-bold tracking-[0.4em]">Cerrar Panel</button>
@@ -217,30 +226,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
                   <h2 className="serif text-4xl md:text-6xl text-[#0a3d31] italic leading-none mb-2">Vitrina.</h2>
                   <p className="text-[9px] font-bold uppercase tracking-[0.4em] text-[#0a3d31]/40">CURADURÍA DE STOCK</p>
                 </div>
-                <button onClick={() => setEditingProduct({ category: Category.ESCOLAR, stock: 10, price: 0, isNew: true, isVideo: false })} className="w-full md:w-auto bg-[#0a3d31] text-white px-10 py-5 rounded-full text-[10px] font-bold uppercase tracking-[0.2em] shadow-xl hover:bg-[#c5a35d] transition-all">+ NUEVA PIEZA</button>
+                {/* Al crear nuevo, isNew es false por defecto para que no salga siempre en novedades */}
+                <button onClick={() => setEditingProduct({ category: Category.ESCOLAR, stock: 10, price: 0, isNew: false, isVideo: false })} className="w-full md:w-auto bg-[#0a3d31] text-white px-10 py-5 rounded-full text-[10px] font-bold uppercase tracking-[0.2em] shadow-xl hover:bg-[#c5a35d] transition-all">+ NUEVA PIEZA</button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {localInventory.map(p => (
-                  <div key={p.id} className="bg-white p-6 rounded-[40px] border shadow-sm flex flex-col gap-4 relative">
-                    <div className="w-full aspect-video rounded-[30px] overflow-hidden bg-[#f9f7f2] border relative">
+                  <div key={p.id} className="bg-white p-6 rounded-[40px] border shadow-sm flex flex-col gap-4 relative animate-fade-in">
+                    <div className="w-full aspect-video rounded-[30px] overflow-hidden bg-[#f9f7f2] border relative group">
                       {p.isNew && <span className="absolute top-4 left-4 z-10 bg-[#0a3d31] text-white text-[7px] px-3 py-1 rounded-full font-bold">NOVEDAD</span>}
                       {p.isVideo ? <video src={optimizeUrl(p.imageUrl)} className="w-full h-full object-cover" /> : <img src={optimizeUrl(p.imageUrl)} className="w-full h-full object-cover" />}
                     </div>
                     <div>
-                      <h4 className="font-bold text-[#0a3d31] text-sm uppercase mb-1">{p.name}</h4>
+                      <h4 className="font-bold text-[#0a3d31] text-sm uppercase mb-1 truncate">{p.name}</h4>
+                      <p className="text-[8px] uppercase tracking-widest text-[#c5a35d] font-bold mb-2">{p.category}</p>
                       <div className="flex justify-between items-end">
-                        <p className="text-lg font-bold">${p.price.toLocaleString()}</p>
+                        <p className="text-lg font-bold text-[#0a3d31]">${p.price.toLocaleString()}</p>
                         <div className="flex gap-2">
-                          <button onClick={() => setEditingProduct(p)} className="p-3 bg-blue-50 text-blue-500 rounded-full text-xs">✏️</button>
+                          <button onClick={() => setEditingProduct(p)} className="p-3 bg-blue-50 text-blue-500 rounded-full text-xs hover:bg-blue-500 hover:text-white transition-all">✏️</button>
                           <button 
-                            onClick={async () => { 
-                              if(confirm('¿Borrar esta pieza de la vitrina?')) { 
-                                // ELIMINACIÓN REACTIVA INMEDIATA
-                                setLocalInventory(prev => prev.filter(item => item.id !== p.id));
-                                await database.deleteProduct(p.id); 
-                                onDeleteProduct(p.id); 
-                              } 
-                            }} 
+                            onClick={() => handleDelete(p.id)} 
                             className="p-3 bg-red-50 text-red-400 rounded-full text-xs hover:bg-red-500 hover:text-white transition-all"
                           >
                             🗑️
@@ -259,14 +263,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
               <h2 className="serif text-4xl md:text-6xl text-[#0a3d31] italic">Ventas.</h2>
               <div className="space-y-4">
                 {sales.map(s => (
-                  <div key={s.id} className="bg-white p-8 rounded-[40px] border shadow-sm flex justify-between items-center group">
+                  <div key={s.id} className="bg-white p-8 rounded-[40px] border shadow-sm flex justify-between items-center group animate-fade-in">
                     <div className="flex-grow">
                       <p className="font-bold text-[10px] uppercase text-[#c5a35d] mb-1">{s.date}</p>
                       <p className="font-bold text-sm text-[#0a3d31] uppercase">{s.itemsDetail}</p>
                     </div>
                     <div className="flex items-center gap-6">
                       <p className="text-2xl font-bold text-[#0a3d31]">${s.total.toLocaleString()}</p>
-                      <button onClick={async () => { if(confirm('¿Borrar historial?')) { await database.deleteSale(s.id); refreshData(); } }} className="p-4 bg-red-50 text-red-400 rounded-full opacity-20 group-hover:opacity-100">🗑️</button>
+                      <button onClick={async () => { if(confirm('¿Borrar historial?')) { await database.deleteSale(s.id); refreshData(); } }} className="p-4 bg-red-50 text-red-400 rounded-full opacity-20 group-hover:opacity-100 transition-all">🗑️</button>
                     </div>
                   </div>
                 ))}
@@ -279,7 +283,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
               <h2 className="serif text-4xl md:text-6xl text-[#0a3d31] italic">Club Socios.</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {members.map(m => (
-                  <div key={m.id} className="bg-white p-10 rounded-[40px] border shadow-sm flex flex-col gap-6 group">
+                  <div key={m.id} className="bg-white p-10 rounded-[40px] border shadow-sm flex flex-col gap-6 group animate-fade-in">
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="font-bold text-lg uppercase text-[#0a3d31] mb-1">{m.name}</p>
@@ -307,17 +311,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
 
           {activeTab === 'coupons' && (
              <div className="animate-fade-in space-y-8">
-                <div className="bg-[#0a3d31] p-10 rounded-[40px] text-white shadow-2xl">
+                <div className="bg-[#0a3d31] p-10 rounded-[40px] text-white shadow-2xl border-b-4 border-[#c5a35d]">
                    <h3 className="serif text-2xl italic mb-6">Crear Cupón</h3>
                    <div className="flex flex-col md:flex-row gap-4">
                      <input type="text" placeholder="CÓDIGO" value={newCouponCode} onChange={e=>setNewCouponCode(e.target.value.toUpperCase())} className="flex-grow bg-white/10 px-8 py-4 rounded-full font-bold uppercase text-[10px] outline-none border border-white/10" />
                      <input type="number" placeholder="% DESC" value={newCouponDiscount} onChange={e=>setNewCouponDiscount(e.target.value)} className="md:w-32 bg-white/10 px-8 py-4 rounded-full font-bold text-[10px] outline-none border border-white/10" />
-                     <button onClick={async () => { await database.addCoupon({ code: newCouponCode, discount: Number(newCouponDiscount)/100 }); refreshData(); }} className="bg-[#c5a35d] text-[#0a3d31] px-10 py-4 rounded-full font-bold text-[10px] uppercase shadow-xl">Crear</button>
+                     <button onClick={async () => { await database.addCoupon({ code: newCouponCode, discount: Number(newCouponDiscount)/100 }); setNewCouponCode(''); setNewCouponDiscount(''); refreshData(); }} className="bg-[#c5a35d] text-[#0a3d31] px-10 py-4 rounded-full font-bold text-[10px] uppercase shadow-xl transition-all hover:scale-105">Crear</button>
                    </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {coupons.map(c => (
-                    <div key={c.code} className="bg-white p-8 rounded-[40px] border shadow-sm flex justify-between items-center group">
+                    <div key={c.code} className="bg-white p-8 rounded-[40px] border shadow-sm flex justify-between items-center group animate-fade-in">
                       <div>
                         <p className="font-bold text-[#0a3d31] text-sm uppercase">{c.code}</p>
                         <p className="text-2xl font-bold text-[#c5a35d]">{c.discount * 100}% OFF</p>
@@ -334,7 +338,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
                 <h2 className="serif text-4xl md:text-6xl text-[#0a3d31] italic">Ideas.</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {suggestions.map(s => (
-                    <div key={s.id} className="bg-white p-10 rounded-[40px] border shadow-sm relative group">
+                    <div key={s.id} className="bg-white p-10 rounded-[40px] border shadow-sm relative group animate-fade-in">
                       <button onClick={async () => { if(confirm('¿Eliminar?')) { await database.deleteSuggestion(s.id); refreshData(); } }} className="absolute top-4 right-4 p-3 bg-red-50 text-red-400 rounded-full opacity-0 group-hover:opacity-100 transition-all">🗑️</button>
                       <p className="serif text-xl italic text-[#0a3d31]">"{s.text}"</p>
                       <p className="text-[8px] opacity-20 mt-4 font-bold uppercase">{s.type} • {s.date}</p>
@@ -345,36 +349,50 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
           )}
         </div>
 
-        {/* Modal de Edición */}
+        {/* Modal de Edición Mejorado con Selector de Categoría */}
         {editingProduct && (
-          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-[#0a3d31]/95 backdrop-blur-xl">
-            <div className="bg-white p-8 md:p-14 rounded-[50px] md:rounded-[70px] max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl">
+          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-[#0a3d31]/95 backdrop-blur-xl animate-fade-in">
+            <div className="bg-white p-8 md:p-14 rounded-[50px] md:rounded-[70px] max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl relative">
               <div className="flex justify-between items-center mb-10">
                 <h3 className="serif text-3xl md:text-5xl text-[#0a3d31] italic">Curaduría de Pieza.</h3>
-                <button onClick={() => setEditingProduct(null)} className="p-4 text-red-500 text-2xl">✕</button>
+                <button onClick={() => setEditingProduct(null)} className="p-4 text-red-500 text-2xl hover:scale-110 transition-transform">✕</button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                 <div className="space-y-6">
                   <div className="space-y-1">
                     <label className="text-[9px] font-bold uppercase opacity-40 px-4">Nombre de la Pieza</label>
-                    <input type="text" value={editingProduct.name || ''} onChange={e=>setEditingProduct({...editingProduct, name: e.target.value})} className="w-full px-8 py-5 rounded-full bg-[#f9f7f2] font-bold text-xs outline-none" />
+                    <input type="text" value={editingProduct.name || ''} onChange={e=>setEditingProduct({...editingProduct, name: e.target.value})} className="w-full px-8 py-5 rounded-full bg-[#f9f7f2] font-bold text-xs outline-none shadow-inner border border-black/5" />
                   </div>
                   
+                  {/* SELECTOR DE CATEGORÍA AGREGADO */}
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold uppercase opacity-40 px-4">Categoría Boutique</label>
+                    <select 
+                      value={editingProduct.category || Category.ESCOLAR} 
+                      onChange={e=>setEditingProduct({...editingProduct, category: e.target.value as Category})}
+                      className="w-full px-8 py-5 rounded-full bg-[#f3f0e8] font-bold text-[10px] uppercase tracking-widest outline-none shadow-inner border border-black/5 appearance-none cursor-pointer"
+                    >
+                      {Object.values(Category).map(cat => (
+                        <option key={cat} value={cat}>{cat.toUpperCase()}</option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold uppercase opacity-40 px-4">Precio (ARS)</label>
-                      <input type="number" value={editingProduct.price || ''} onChange={e=>setEditingProduct({...editingProduct, price: Number(e.target.value)})} className="w-full px-8 py-5 rounded-full bg-[#f9f7f2] font-bold text-xs outline-none" />
+                      <input type="number" value={editingProduct.price || ''} onChange={e=>setEditingProduct({...editingProduct, price: Number(e.target.value)})} className="w-full px-8 py-5 rounded-full bg-[#f9f7f2] font-bold text-xs outline-none shadow-inner border border-black/5" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold uppercase opacity-40 px-4">Stock Local</label>
-                      <input type="number" value={editingProduct.stock || ''} onChange={e=>setEditingProduct({...editingProduct, stock: Number(e.target.value)})} className="w-full px-8 py-5 rounded-full bg-[#f9f7f2] font-bold text-xs outline-none" />
+                      <input type="number" value={editingProduct.stock || ''} onChange={e=>setEditingProduct({...editingProduct, stock: Number(e.target.value)})} className="w-full px-8 py-5 rounded-full bg-[#f9f7f2] font-bold text-xs outline-none shadow-inner border border-black/5" />
                     </div>
                   </div>
 
                   <div className="space-y-1">
                     <label className="text-[9px] font-bold uppercase opacity-40 px-4">Descripción Corta</label>
-                    <textarea value={editingProduct.description || ''} onChange={e=>setEditingProduct({...editingProduct, description: e.target.value})} className="w-full px-8 py-5 rounded-[30px] bg-[#f9f7f2] text-xs outline-none resize-none" rows={3} />
+                    <textarea value={editingProduct.description || ''} onChange={e=>setEditingProduct({...editingProduct, description: e.target.value})} className="w-full px-8 py-5 rounded-[30px] bg-[#f9f7f2] text-xs outline-none shadow-inner border border-black/5 resize-none" rows={3} />
                   </div>
 
                   <div className="flex gap-4 p-4 bg-[#f9f7f2] rounded-[30px] border border-black/5">
@@ -397,18 +415,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
                   <label className="text-[9px] font-bold uppercase opacity-40 px-4">Multimedia Boutique</label>
                   <button 
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full p-12 rounded-[40px] border-2 border-dashed border-[#c5a35d]/40 bg-[#f9f7f2] flex flex-col items-center gap-3 hover:border-[#c5a35d] transition-all"
+                    className="w-full p-12 rounded-[40px] border-2 border-dashed border-[#c5a35d]/40 bg-[#f9f7f2] flex flex-col items-center gap-3 hover:border-[#c5a35d] transition-all group"
                   >
-                    <span className="text-4xl">{isLoading ? '⏳' : '📸'}</span>
-                    <p className="text-[10px] font-bold uppercase tracking-widest">{isLoading ? 'Subiendo...' : 'Abrir Galería del Celular'}</p>
+                    <span className="text-4xl group-hover:scale-110 transition-transform">{isLoading ? '⏳' : '📸'}</span>
+                    <p className="text-[10px] font-bold uppercase tracking-widest">{isLoading ? 'Subiendo...' : 'Abrir Galería'}</p>
                   </button>
                   
                   {editingProduct.imageUrl && (
-                    <div className="p-4 bg-white rounded-3xl border flex items-center gap-4">
-                      <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0">
+                    <div className="p-4 bg-white rounded-3xl border border-black/5 flex items-center gap-4 animate-fade-in shadow-sm">
+                      <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 shadow-md">
                          {editingProduct.isVideo ? <video src={optimizeUrl(editingProduct.imageUrl)} className="w-full h-full object-cover" /> : <img src={optimizeUrl(editingProduct.imageUrl)} className="w-full h-full object-cover" />}
                       </div>
-                      <div className="truncate">
+                      <div className="truncate flex-grow">
                         <p className="text-[7px] font-bold text-[#c5a35d] uppercase">Vínculo Seguro Generado</p>
                         <p className="text-[8px] opacity-30 truncate font-mono">{editingProduct.imageUrl}</p>
                       </div>
@@ -417,9 +435,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
                 </div>
               </div>
 
-              <div className="flex gap-4 pt-10 mt-10 border-t">
-                <button onClick={() => setEditingProduct(null)} className="flex-1 py-6 border-2 border-black/5 rounded-full font-bold uppercase text-[10px] tracking-widest">Cancelar</button>
-                <button onClick={handleSaveProduct} className="flex-1 py-6 rounded-full font-bold uppercase text-[10px] tracking-widest text-white bg-[#0a3d31] hover:bg-[#c5a35d] shadow-xl">Guardar en Vitrina</button>
+              <div className="flex gap-4 pt-10 mt-10 border-t border-black/5">
+                <button onClick={() => setEditingProduct(null)} className="flex-1 py-6 border-2 border-black/5 rounded-full font-bold uppercase text-[10px] tracking-widest hover:bg-black/5 transition-all">Cancelar</button>
+                <button onClick={handleSaveProduct} disabled={isLoading} className="flex-1 py-6 rounded-full font-bold uppercase text-[10px] tracking-widest text-white bg-[#0a3d31] hover:bg-[#c5a35d] shadow-xl transition-all disabled:opacity-50">
+                  {isLoading ? 'GUARDANDO...' : 'Guardar en Vitrina'}
+                </button>
               </div>
             </div>
           </div>
@@ -429,4 +449,3 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
   );
 };
 
-export default AdminPanel;
