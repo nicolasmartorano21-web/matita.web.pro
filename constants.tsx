@@ -20,7 +20,7 @@ export const CONTACT_INFO = {
 };
 
 export const PAYMENT_METHODS = [
-  { id: 'transfer', label: 'Transferencia / Alias', icon: '🏦', detail: 'Alias: MATITA.BOUTIQUE.MP' },
+  { id: 'transfer', label: 'Transferencia / Alias', icon: '🏦', detail: 'Alias: Matita.2020.mp o Matita.2023' },
   { id: 'cash', label: 'Efectivo en Local', icon: '💵', detail: '10% de cortesía extra' },
   { id: 'card', label: 'Tarjeta de Crédito/Débito', icon: '💳', detail: 'En el local vía Posnet' }
 ];
