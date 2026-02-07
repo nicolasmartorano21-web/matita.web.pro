@@ -20,9 +20,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
   const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Sincronización robusta con la vitrina global
   const [localInventory, setLocalInventory] = useState<Product[]>(products);
-  
   const [sales, setSales] = useState<Sale[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
@@ -98,7 +96,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
   };
 
   const handleSaveProduct = async () => {
-    if (!editingProduct?.name || editingProduct.price === undefined) return alert('Faltan datos.');
+    if (!editingProduct?.name || editingProduct.price === undefined || !editingProduct.category) return alert('Faltan datos (Nombre, Precio o Categoría).');
     setIsLoading(true);
     try {
       const productData: Product = {
@@ -108,11 +106,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
         curatorNote: editingProduct.curatorNote || '',
         price: Number(editingProduct.price),
         oldPrice: editingProduct.oldPrice ? Number(editingProduct.oldPrice) : undefined,
-        category: editingProduct.category || Category.ESCOLAR,
+        category: editingProduct.category as Category,
         imageUrl: editingProduct.imageUrl || '',
         gallery: editingProduct.gallery || [],
         stock: Number(editingProduct.stock || 0),
-        isNew: editingProduct.isNew ?? true,
+        isNew: editingProduct.isNew ?? false, // Ahora por defecto es FALSE para no saturar Novedades
         isVideo: editingProduct.isVideo || false,
         reviews: editingProduct.reviews || []
       };
@@ -133,14 +131,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
 
   const handleDelete = async (id: string) => {
     if(!confirm('¿Borrar esta pieza?')) return;
-    // Eliminación reactiva inmediata (Optimistic UI)
     setLocalInventory(prev => prev.filter(p => p.id !== id));
     try {
       await database.deleteProduct(id);
       onDeleteProduct(id);
     } catch (e) {
       alert("Error al borrar en base de datos");
-      refreshData(); // Revertir si falla
+      refreshData();
     }
   };
 
@@ -229,7 +226,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
                   <h2 className="serif text-4xl md:text-6xl text-[#0a3d31] italic leading-none mb-2">Vitrina.</h2>
                   <p className="text-[9px] font-bold uppercase tracking-[0.4em] text-[#0a3d31]/40">CURADURÍA DE STOCK</p>
                 </div>
-                <button onClick={() => setEditingProduct({ category: Category.ESCOLAR, stock: 10, price: 0, isNew: true, isVideo: false })} className="w-full md:w-auto bg-[#0a3d31] text-white px-10 py-5 rounded-full text-[10px] font-bold uppercase tracking-[0.2em] shadow-xl hover:bg-[#c5a35d] transition-all">+ NUEVA PIEZA</button>
+                {/* Al crear nuevo, isNew es false por defecto para que no salga siempre en novedades */}
+                <button onClick={() => setEditingProduct({ category: Category.ESCOLAR, stock: 10, price: 0, isNew: false, isVideo: false })} className="w-full md:w-auto bg-[#0a3d31] text-white px-10 py-5 rounded-full text-[10px] font-bold uppercase tracking-[0.2em] shadow-xl hover:bg-[#c5a35d] transition-all">+ NUEVA PIEZA</button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {localInventory.map(p => (
@@ -240,8 +238,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
                     </div>
                     <div>
                       <h4 className="font-bold text-[#0a3d31] text-sm uppercase mb-1 truncate">{p.name}</h4>
+                      <p className="text-[8px] uppercase tracking-widest text-[#c5a35d] font-bold mb-2">{p.category}</p>
                       <div className="flex justify-between items-end">
-                        <p className="text-lg font-bold text-[#c5a35d]">${p.price.toLocaleString()}</p>
+                        <p className="text-lg font-bold text-[#0a3d31]">${p.price.toLocaleString()}</p>
                         <div className="flex gap-2">
                           <button onClick={() => setEditingProduct(p)} className="p-3 bg-blue-50 text-blue-500 rounded-full text-xs hover:bg-blue-500 hover:text-white transition-all">✏️</button>
                           <button 
@@ -350,7 +349,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
           )}
         </div>
 
-        {/* Modal de Edición */}
+        {/* Modal de Edición Mejorado con Selector de Categoría */}
         {editingProduct && (
           <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-[#0a3d31]/95 backdrop-blur-xl animate-fade-in">
             <div className="bg-white p-8 md:p-14 rounded-[50px] md:rounded-[70px] max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl relative">
@@ -366,6 +365,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onAddProduct, onUpdate
                     <input type="text" value={editingProduct.name || ''} onChange={e=>setEditingProduct({...editingProduct, name: e.target.value})} className="w-full px-8 py-5 rounded-full bg-[#f9f7f2] font-bold text-xs outline-none shadow-inner border border-black/5" />
                   </div>
                   
+                  {/* SELECTOR DE CATEGORÍA AGREGADO */}
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold uppercase opacity-40 px-4">Categoría Boutique</label>
+                    <select 
+                      value={editingProduct.category || Category.ESCOLAR} 
+                      onChange={e=>setEditingProduct({...editingProduct, category: e.target.value as Category})}
+                      className="w-full px-8 py-5 rounded-full bg-[#f3f0e8] font-bold text-[10px] uppercase tracking-widest outline-none shadow-inner border border-black/5 appearance-none cursor-pointer"
+                    >
+                      {Object.values(Category).map(cat => (
+                        <option key={cat} value={cat}>{cat.toUpperCase()}</option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold uppercase opacity-40 px-4">Precio (ARS)</label>
